@@ -1,6 +1,7 @@
 # RIMeta
 R Shiny Application to Estimate a Reference Interval from a Meta-Analysis
 Ziren Jiang*, Wenhao Cao*, Fateh Bazerbachi, Haitao Chu, Lianne Siegel
+
 \* denotes contributed equally
 
 
