@@ -7,6 +7,8 @@ x[i] ~ dgamma((n[i]-1)/2, 1/(2*sigma^2))
 }
 #posterior predictive interval
 new ~ dnorm(mu, 1/(sigma^2 + tau^2))
+qlower <- qnorm(lower,mu, 1/(sigma^2 + tau^2))
+qupper <- qnorm(upper, mu, 1/(sigma^2 + tau^2))
 # priors
 mu ~ dnorm(0, 0.001)
 tau ~ dunif(0,10)

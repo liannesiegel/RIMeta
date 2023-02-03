@@ -140,42 +140,47 @@ BayesFitCaseStudy <- function(means, sds, n,quant,plot=TRUE,iter=50000,burnin=50
     #scale and center the parameter autometically
     y=(y-center_para)/scale_para
     sd=sd/scale_para
-    #print(sd)
+ 
     x <- (n-1)*(sd^2)
-    data <- list(y = y, x = x, n=n)
+    data <- list(y = y, x = x, n=n,lower=(1-quant)/2,upper=(1+quant)/2)
+    
+    
     Inits1=list(.RNG.name = "base::Mersenne-Twister", .RNG.seed = 123)
     Inits2=list(.RNG.name = "base::Mersenne-Twister", .RNG.seed = 124)
     Inits <- list(Inits1, Inits2)
-    #upb1=as.character((quant+1)*50)
-    #upb=paste0(upb1,"%")
-    #lob1=as.character((1-quant)*50)
-    #lob=paste0(lob1,"%")
    
     jags.model=jags.model(file="./Bayesian.txt",data=data,inits=Inits,n.chain=2, quiet = T)
     
     burn.in <- burnin
     update(jags.model, n.iter = burn.in)
-    params <- c("tau", "mu", "sigma", "new")
+    params <- c("tau", "mu", "sigma", "new","qlower", "qupper")
+    
     samps=coda.samples(jags.model, params, n.iter = iter, .RNG.name = "base::Mersenne-Twister", .RNG.seed = 123)
-    #print(summary(samps))
+    samps.summary = summary(samps)
+    
     findout=c(samps[[1]][,2],samps[[2]][,2])
-    meantau=mean(c(samps[[1]][,4],samps[[2]][,4]))*(scale_para)
-    meansigma=mean(c(samps[[1]][,3],samps[[2]][,3]))*(scale_para)
-    #trac=plot(samps[[1]][,2],trace=TRUE,density=TRUE)
+    meantau=mean(c(samps[[1]][,6],samps[[2]][,6]))*(scale_para)
+    meansigma=mean(c(samps[[1]][,5],samps[[2]][,5]))*(scale_para)
+    
+    new.lower=quantile(c(samps[[1]][,3],samps[[2]][,3]),probs=0.5)*scale_para+center_para
+    new.upper=quantile(c(samps[[1]][,4],samps[[2]][,4]),probs=0.5)*scale_para+center_para
+    
     color_scheme_set("mix-blue-red")
     if(plot){
       trac=tracePlot(samps)
     }else{
       trac=0
     }
-    
-    #trac=mcmc_trace(samps,pars = "new")
-    #print(quantile(findout,0.025))
-    results=list(samps,quantile(findout,(1-quant)/2)*scale_para+center_para , quantile(findout,(1+quant)/2)*scale_para+center_para,
+   
+    results=list(samps,
+                 quantile(findout,(1-quant)/2)*scale_para+center_para , 
+                 quantile(findout,(1+quant)/2)*scale_para+center_para,
                  trac,
                  tau=meantau,
                  Isq=(meantau^2)/(meantau^2+(meansigma^2)/N),
-                 sigma=meansigma)
+                 sigma=meansigma,
+                 new.lower=new.lower,
+                 new.upper=new.upper)
     return(results)
 }
 
@@ -211,8 +216,6 @@ MixFit <- function(means, sds, n, weight = "ss",quant){
     }
     f = function(x,w,p){
         y=w%*%pnorm(x,means,sds)-p
-        #y=w%*%plnorm(x,meanlog=log(means/sqrt(1 + (sds^2)/(means^2))), sdlog =sqrt(log(1+(sds^2/means^2))))-p
-        #y=w%*%pgamma(x,shape = means^2/sds^2,scale = sds^2/means)-p
     }
     lo=(1-quant)/2
     up=(1+quant)/2
@@ -241,7 +244,6 @@ study_level_outcomes <- function(data = NULL, subset=NULL, formula = NULL,
     freqdata <- cbind(mean,author,n,sd)
     # Need checkdata function from basics.R (or end of this R file) for this to work
     checkdata(freqdata)
-  # Sensitivity and specificity calculations for each study
     #print(quant)
     Lower.mean = mean-qnorm((1+qu)/2)*sd/sqrt(n)
     Upper.mean = mean+qnorm((1+qu)/2)*sd/sqrt(n)
@@ -287,7 +289,7 @@ ui <- navbarPage(title = "RIMeta: Meta-Analysis for Reference Interval",
                  tabPanel("Home", 
                           h1("RIMeta: Estimating the Reference Interval from a Meta-Analysis v3.0 (Sep 2022)"),
                           br(),
-                          h4("A reference interval, or reference range, is defined as the interval in which some proportion (usually 95%) of measurements from a healthy population is expected to fall ",tags$strong("(see Siegel et.al.2022)"),"It is useful in practice   for clinicians or caregivers to decide whether a patient \'s measurement reflects that of a healthy \'normal\' individual. One can estimate it from a single study or preferably from a meta-analysis of multiple studies to increase generalizability. This range differs from the confidence interval for the pooled mean or the prediction interval for a new study mean in a meta-analysis, which do not capture natural variation across healthy individuals. With the aggregate data (study mean, standard deviation, and sample size) from each study, RIMeta allows users to estimate the reference interval using multiple methods.",tags$strong("(see Siegel et.al.2021 & Cao et.al.2021)")),
+                          h4("A reference interval, or reference range, is defined as the interval in which some proportion (usually 95%) of measurements from a healthy population is expected to fall ",tags$strong("(see Siegel et al., 2022)"),"It is useful in practice   for clinicians or caregivers to decide whether a patient \'s measurement reflects that of a healthy \'normal\' individual. One can estimate it from a single study or preferably from a meta-analysis of multiple studies to increase generalizability. This range differs from the confidence interval for the pooled mean or the prediction interval for a new study mean in a meta-analysis, which do not capture natural variation across healthy individuals. With the aggregate data (study mean, standard deviation, and sample size) from each study, RIMeta allows users to estimate the reference interval using multiple methods.",tags$strong("(see Siegel et al., 2021 & Cao et al., 2021)")),
                           br(),
                           h4("RIMeta implements two meta-analysis models that can be used to estimate the pooled mean and reference interval: the random effects model and the fixed effects model. The random effects model assumes all study means follow a common distribution. Thus, the reference interval in the random effects model reflects both the between study variation and the within study variation. The fixed effects model, which is usually preferred when the number of studies is small, assumes the study means are independent of each other. "),
                           br(),
@@ -309,7 +311,7 @@ ui <- navbarPage(title = "RIMeta: Meta-Analysis for Reference Interval",
                           br(),
                           br(),
                           p("Codes for this app are available on GitHub: "),
-                          # tags$a(href = ""),
+                          p(tags$a(href="https://github.com/liannesiegel/RIMeta", "GitHub Link")),
                           br(),
                           br(),
                           p("RIMeta is constructed using the following packages from R:"),
@@ -425,15 +427,10 @@ ui <- navbarPage(title = "RIMeta: Meta-Analysis for Reference Interval",
                                                p("The", tags$strong("third"), "column should be labelled", tags$strong("sd"), "and contain the observed standard deviation of each study population (this is not the standard error of the mean)."),
                                                p("The", tags$strong("fourth"), "column should be labelled", tags$strong("n"), "and contain the number of 
                                            participants in each study."),
-                                               #p("The row with all value equal to \"0\" will be omitted for data analysis"),
-                                     #          sidebarLayout(
-                                     #            sidebarPanel(
-                                     #               numericInput("studynum","Number of studies:",value = 15,min = 0,max = 100)
-                                     #            ),
-                                    #             mainPanel(
-                                     #               actionButton("goo",label = "Apply Number")
-                                      #           )
-                                       #        ),
+                                               h5("The example dataset is from a meta-analysis of subjective postural vertical (SPV) measurements. A person's SPV reflects whether they perceive verticality accurately. The meta-analysis aims to construct a reference interval for the SPV of healthy people. See more details at:"),
+                                               p("[1]:",tags$a(href="https://doi.org/10.1002/jrsm.1442", "Siegel L, Murad MH, Chu H. Estimating the reference range from a meta‐analysis. Research synthesis methods. 2021 Mar;12(2):148-60.")),
+                                               p("[2]:",tags$a(href="https://doi.org/10.1371/journal.pone.0204122", "ConceiçãoL et al., Normative data for human postural vertical: A systematic review and meta-analysis. PLoS One. 2018;13(9)")),
+                    
                                               fluidRow(
                                                 column(2.5,
                                                   numericInput("studynum","Number of studies:",value = 15,min = 0,max = 100)
@@ -493,15 +490,16 @@ ui <- navbarPage(title = "RIMeta: Meta-Analysis for Reference Interval",
                                       ),
                                       
                                       tabPanel("Table of Results", 
-                                               h3("Results for estimated Intervals"),
+                                               h3("Results for estimated intervals"),
+                                               h5("Please wait for data processing"),
                                                br(),
                                                tableOutput("statTable"),
                                                downloadButton("downloadStatTable", "Download Table"),
                                                br(),
                                                uiOutput("hetero"),
                                                tableOutput("heterotable"),
-                                               conditionalPanel( condition = "output.remodel",
-                                                                 downloadButton("downloadStatTable2", "Download Table")),
+                                               uiOutput("download"),
+                                               
                                                br()
                                       ),
                                       tabPanel("Diagostic Plots", br(),
@@ -534,11 +532,7 @@ ui <- navbarPage(title = "RIMeta: Meta-Analysis for Reference Interval",
 # Define server logic required to draw a histogram
 server <- function(input, output) {
     Standard <- read.csv("./Standard.csv")
-    
-    #bbb=study_level_outcomes(Standard,quant=0.95)
-    #bb.bayes = BayesFitCaseStudy(means = bbb$mean, sds =bbb$sd, n = bbb$n, quant = quantile)
-    
-    
+
     data <- reactive({ 
         file1 <- input$data
         if(is.null(file1)){
@@ -552,7 +546,13 @@ server <- function(input, output) {
             
           },
             error=function(e){
-              stop(safeError(e))
+              #message(paste("Please have a correct "),e)
+              showModal(
+                modalDialog(
+                  div("This file type is not supported.\n Please RELOAD RIMeta and upload a .txt or .csv file")
+                  ,easyClose = FALSE)
+              )
+              
             }
           )
         }
@@ -640,10 +640,6 @@ server <- function(input, output) {
       #print(v$data[i,j])
     })
     
-   # output$rawtable <- renderTable({
-   #     if(is.null(data())){return()}
-   #     data()
-   # })
     
     # In the "Load data" tab (created in the UI section) we divide the main panel into mutlipe tabs and add the content
     # we've just created
@@ -714,6 +710,8 @@ server <- function(input, output) {
       
     })
     
+    
+    
     output$hetero=renderUI({
       if(input$model=="Random-effects"){
         RangeCheck=(input$RangeCheckr)
@@ -776,7 +774,7 @@ server <- function(input, output) {
                                       choices = list("Confidence Interval for Study Mean"=1, "Study-Specific Predictive Interval"=2,
                                                      "Overall Confidence Interval for Mean (Random)"=3, "New Study (Random)" = 4,
                                                        "Frequentist"=6,
-                                                     "Empirical" =7, "Bayesian" =8),
+                                                     "Empirical" =7, "Bayesian predictive method" =8,"Bayesian quantile method"=10),
                                       selected=list(1,2,3,4,6,7,8))
           ),
           tabPanel("Fixed-effects",
@@ -812,7 +810,13 @@ server <- function(input, output) {
       return((input$model=="Random-effects")&('6' %in% input$RangeCheckr))
       
     })
-   
+    output$download=renderUI({
+      if(input$model=="Random-effects"){
+        if(('6' %in% input$RangeCheckr)|('8' %in% input$RangeCheckr)){
+          downloadButton("downloadStatTable2","Download Table")
+        }
+      }
+    })
     outputOptions(output, "fmethod", suspendWhenHidden = FALSE)  
     
     output$remodel=reactive({
@@ -914,7 +918,7 @@ server <- function(input, output) {
         write.table(bb, file, sep=",", row.names=FALSE)
       })
     
-    RangeCheck=list(1,2,3,4,6,7,8)
+    RangeCheck=list(1,2,3,4,6,7,8,9,10)
     
     output$QQP=renderPlot({
       if(input$model=="Random-effects"){
@@ -937,7 +941,7 @@ server <- function(input, output) {
       if(input$model=="Fixed-effects"){
         RangeCheck=(input$RangeCheckf)
       }
-      if(('8' %in% RangeCheck)&input$model=="Random-effects"){
+      if((('8' %in% RangeCheck)|('10' %in% RangeCheck))&input$model=="Random-effects"){
         if(is.null(v$data)){return()}
         else{X <- v$data}
         if(!is.null(input$percentile)){
@@ -1011,9 +1015,11 @@ server <- function(input, output) {
       
       ### Bayesian method
       set.seed(123)
-      #b.bayes <<- BayesFitCaseStudy(means = b$mean, sds =b$sd, n = b$n, quant = quantile)
-      if('8' %in% RangeCheck){
+      
+      if(('8' %in% RangeCheck)|('10' %in% RangeCheck)){
         b.bayes=bb.bayes()
+      }else{
+        b.bayes=b.freq
       }
       
       ### Empirical method
@@ -1047,21 +1053,22 @@ server <- function(input, output) {
                                 b.freq[[2]], b.freq[[3]],
                                 b.emp[[1]], b.emp[[2]], 
                                 b.bayes[[2]], b.bayes[[3]],
-                                b.mix[1],b.mix[2]), nrow = 7,byrow = T)
-      result.toadd <- cbind(c(rep("Overall", 3),rep(l5, 4)),  
-                            c(rep(pooled.mean.random,2), pooled.mean.fixed, rep(pooled.mean.random,3), pooled.mean.fixed), 
-                            c(l3, "95% Prediction Interval of New Study mean", l4, "Frequentist", "Empirical", "Bayesian", "Mixture"), result.matrix)
+                                b.bayes[[8]], b.bayes[[9]],
+                                b.mix[1],b.mix[2]), nrow = 8,byrow = T)
+      result.toadd <- cbind(c(rep("Overall", 3),rep(l5, 5)),  
+                            c(rep(pooled.mean.random,2), pooled.mean.fixed, rep(pooled.mean.random,4), pooled.mean.fixed), 
+                            c(l3, "95% Prediction Interval of New Study mean", l4, "Frequentist", "Empirical", "Bayesian predictive method","Bayesian quantile method", "Mixture"), result.matrix)
       # Combine all the results
       b_long2 <- rbind(b_long, result.toadd, use.names = F)
       b_long2$MeanEstimate <- as.numeric(b_long2$mean)
       b_long2$Lower <- as.numeric(b_long2$Lower)
       b_long2$Upper <- as.numeric(b_long2$Upper)
-      b_long2$IntervalType2 <- factor(b_long2$IntervalType,levels(b_long2$IntervalType)[c(9,8,7,6,4,5,3,2,1)])
+      b_long2$IntervalType2 <- factor(b_long2$IntervalType,levels(b_long2$IntervalType)[c(10,9,8,7,6,4,5,3,2,1)])
       b_long2$author <- factor(b_long2$author)
       author1 <- c(which(levels(b_long2$author)=="Overall"),which(levels(b_long2$author)==l5))
       b_long2$author2 <- factor(b_long2$author,levels(b_long2$author)[c(c(1:length(levels(b_long2$author)))[-author1],author1)])
       
-      color_select=rep(TRUE,9)
+      color_select=rep(TRUE,10)
       
       #observeEvent(input$titlegoo,{
       #  plot_title=input$title
@@ -1084,9 +1091,11 @@ server <- function(input, output) {
       if ('7' %in% RangeCheck){
         plot_long <-rbind(plot_long,  b_long2[b_long2$IntervalType2 == "Empirical",])}else{color_select[7]=FALSE}
       if ('8' %in% RangeCheck){
-        plot_long <-rbind(plot_long,  b_long2[b_long2$IntervalType2 == "Bayesian" ,])}else{color_select[8]=FALSE}
+        plot_long <-rbind(plot_long,  b_long2[b_long2$IntervalType2 == "Bayesian predictive method" ,])}else{color_select[8]=FALSE}
       if ('9' %in% RangeCheck){
         plot_long <-rbind(plot_long,  b_long2[b_long2$IntervalType2 == "Mixture",])}else{color_select[9]=FALSE}
+      if ('10' %in% RangeCheck){
+         plot_long <-rbind(plot_long,  b_long2[b_long2$IntervalType2 == "Bayesian quantile method",])}else{color_select[10]=FALSE}
       # Draw the plot
        meanline = c()
        
@@ -1117,7 +1126,7 @@ server <- function(input, output) {
                coord_flip() + 
                guides(fill = guide_legend(reverse = TRUE))+ 
                guides(color = guide_legend(reverse = TRUE)) + 
-               scale_color_manual(values = rev(c("#619CFF","#C77CFF", "#7CAE00", "goldenrod2", "darkorange4","#F4460D","#00BFC4","gray","#F8766D")[color_select]))
+               scale_color_manual(values = rev(c("#619CFF","#C77CFF", "#7CAE00", "goldenrod2", "darkorange4","#F4460D","#00BFC4","gray","#F8766D","#644CFF")[color_select]))
        
       
     })
@@ -1221,21 +1230,27 @@ server <- function(input, output) {
                                     b.freq[[2]], b.freq[[3]],
                                     b.emp[[1]], b.emp[[2]], 
                                     b.bayes[[2]], b.bayes[[3]],
-                                    b.mix[1],b.mix[2]), nrow = 7,byrow = T)
-          result.toadd <- cbind(c(rep("Overall", 3),rep(l5, 4)),  
-                                c(rep(pooled.mean.random,2), pooled.mean.fixed, rep(pooled.mean.random,3), pooled.mean.fixed), 
-                                c(l3, "95% Prediction Interval of New Study mean", l4, "Frequentist", "Empirical", "Bayesian", "Mixture"), result.matrix)
+                                    b.bayes[[8]], b.bayes[[9]],
+                                    b.mix[1],b.mix[2]), nrow = 8,byrow = T)
+          result.toadd <- cbind(c(rep("Overall", 3),rep(l5, 5)),  
+                                c(rep(pooled.mean.random,2), pooled.mean.fixed, rep(pooled.mean.random,4), pooled.mean.fixed), 
+                                c(l3, "95% Prediction Interval of New Study mean", l4, "Frequentist", "Empirical", "Bayesian predictive method","Bayesian quantile method", "Mixture"), result.matrix)
           # Combine all the results
           b_long2 <- rbind(b_long, result.toadd, use.names = F)
           b_long2$MeanEstimate <- as.numeric(b_long2$mean)
           b_long2$Lower <- as.numeric(b_long2$Lower)
           b_long2$Upper <- as.numeric(b_long2$Upper)
-          b_long2$IntervalType2 <- factor(b_long2$IntervalType,levels(b_long2$IntervalType)[c(9,8,7,6,4,5,3,2,1)])
+          b_long2$IntervalType2 <- factor(b_long2$IntervalType,levels(b_long2$IntervalType)[c(10,9,8,7,6,4,5,3,2,1)])
           b_long2$author <- factor(b_long2$author)
           author1 <- c(which(levels(b_long2$author)=="Overall"),which(levels(b_long2$author)==l5))
           b_long2$author2 <- factor(b_long2$author,levels(b_long2$author)[c(c(1:length(levels(b_long2$author)))[-author1],author1)])
           
-          color_select=rep(TRUE,9)
+          color_select=rep(TRUE,10)
+          
+          #observeEvent(input$titlegoo,{
+          #  plot_title=input$title
+          #})
+          
           # Create new data based on the tab selection
           plot_long <- b_long2[FALSE,]
           if ('1' %in% RangeCheck){
@@ -1253,9 +1268,11 @@ server <- function(input, output) {
           if ('7' %in% RangeCheck){
             plot_long <-rbind(plot_long,  b_long2[b_long2$IntervalType2 == "Empirical",])}else{color_select[7]=FALSE}
           if ('8' %in% RangeCheck){
-            plot_long <-rbind(plot_long,  b_long2[b_long2$IntervalType2 == "Bayesian" ,])}else{color_select[8]=FALSE}
+            plot_long <-rbind(plot_long,  b_long2[b_long2$IntervalType2 == "Bayesian predictive method" ,])}else{color_select[8]=FALSE}
           if ('9' %in% RangeCheck){
             plot_long <-rbind(plot_long,  b_long2[b_long2$IntervalType2 == "Mixture",])}else{color_select[9]=FALSE}
+          if ('10' %in% RangeCheck){
+            plot_long <-rbind(plot_long,  b_long2[b_long2$IntervalType2 == "Bayesian quantile method",])}else{color_select[10]=FALSE}
           # Draw the plot
           meanline = c()
           
@@ -1265,27 +1282,33 @@ server <- function(input, output) {
           if(input$model=="Fixed-effects"){
             meanline<-c(meanline, pooled.mean.fixed)
           }
-        p= ggplot(plot_long,aes(x = IntervalType2,y = MeanEstimate, ymin = Lower, ymax = Upper))+
-          geom_pointrange(aes(col=IntervalType2))+
-          geom_hline(aes(fill=IntervalType2),yintercept = meanline, linetype=2)+
-          xlab('Study')+ ylab("Reference Interval")+
-          geom_errorbar(aes(ymin=Lower, ymax=Upper,col=IntervalType2),width=0.5,cex=1)+ 
-          ggtitle(input$title)+
-          facet_wrap(~author2,strip.position="left",nrow=nrow(X)*2,scales = "free_y") +
-          theme(plot.title=element_text(size=16,face="bold",hjust=0.65),
-                axis.text.y=element_blank(),
-                axis.ticks.y=element_blank(),
-                axis.text.x=element_text(face="bold"),
-                axis.title=element_text(size=12,face="bold"),
-                legend.title = element_blank(),
-                strip.text.y.left = element_text(hjust=0.5,vjust = 1,angle=0,face="bold"))+
-          coord_flip() + 
-          guides(fill = guide_legend(reverse = TRUE))+ 
-          guides(color = guide_legend(reverse = TRUE)) + 
-          scale_color_manual(values = rev(c("#619CFF","#C77CFF", "#7CAE00", "goldenrod2", "darkorange4","#F4460D","#00BFC4","gray","#F8766D")[color_select]))
-        
+          plottitleapplied="Reference Interval Plot"
+          
+          #plottitleapplied=ifelse(is.na(plot_title()),"Reference Interval Plot",plot_title())
+          # print(c("#619CFF","#C77CFF", "#7CAE00", "goldenrod2", "darkorange4","#F4460D","#00BFC4","gray","#F8766D")[color_select])
+          p=ggplot(plot_long,aes(x = IntervalType2,y = MeanEstimate, ymin = Lower, ymax = Upper))+
+            geom_pointrange(aes(col=IntervalType2))+
+            geom_hline(aes(fill=IntervalType2),yintercept = meanline, linetype=2)+
+            xlab('Study')+ ylab("Reference Interval")+
+            geom_errorbar(aes(ymin=Lower, ymax=Upper,col=IntervalType2),width=0.5,cex=1)+ 
+            facet_wrap(~author2,strip.position="left",nrow=nrow(X)*2,scales = "free_y") +
+            ggtitle(input$title)+
+            theme(plot.title=element_text(size=16,face="bold"),
+                  axis.text.y=element_blank(),
+                  axis.ticks.y=element_blank(),
+                  axis.text.x=element_text(face="bold"),
+                  axis.title=element_text(size=12,face="bold"),
+                  legend.title = element_blank(),
+                  strip.text.y.left = element_text(hjust=0.5,vjust = 1,angle=0,face="bold"))+
+            coord_flip() + 
+            guides(fill = guide_legend(reverse = TRUE))+ 
+            guides(color = guide_legend(reverse = TRUE)) + 
+            scale_color_manual(values = rev(c("#619CFF","#C77CFF", "#7CAE00", "goldenrod2", "darkorange4","#F4460D","#00BFC4","gray","#F8766D","#644CFF")[color_select]))
+          
+         
         #print(p)
-        ggsave(file,plot=p,bg="white",width =26,units = "cm",height =30)
+        height=2.1*(length(X$author)+2)
+        ggsave(file,plot=p,bg="white",width =30,units = "cm",height =height)
         #dev.off()
       }
     )
@@ -1328,7 +1351,7 @@ server <- function(input, output) {
         
         if ('8' %in% RangeCheck){
           b.bayes=bb.bayes()
-          bb=rbind(bb,c("Bayesian",
+          bb=rbind(bb,c("Bayesian predictive method",
                         sprintf('%4.2f', as.numeric(b.bayes$tau)^2),
                         sprintf('%4.2f', as.numeric(b.bayes$sigma)^2),
                         ""))
@@ -1395,10 +1418,10 @@ server <- function(input, output) {
           
           if ('8' %in% RangeCheck){
             b.bayes=bb.bayes()
-            bb=rbind(bb,c("Bayesian",
+            bb=rbind(bb,c("Bayesian predictive method",
                           sprintf('%4.2f', as.numeric(b.bayes$tau)^2),
                           sprintf('%4.2f', as.numeric(b.bayes$sigma)^2),
-                          sprintf('%4.2f', as.numeric(b.bayes$Isq))))
+                          ""))
             #bb=rbind(bb,c("Bayesian",b.bayes$tau^2))
           }
           
@@ -1430,7 +1453,7 @@ server <- function(input, output) {
       if(input$model=="Fixed-effects"){
         RangeCheck=(input$RangeCheckf)
       }
-      content_select=rep(TRUE,7)
+      content_select=rep(TRUE,8)
       if ('3' %in% RangeCheck){}else{content_select[1]=FALSE}
       if ('4' %in% RangeCheck){}else{content_select[2]=FALSE}
       if ('5' %in% RangeCheck){}else{content_select[3]=FALSE}
@@ -1438,7 +1461,7 @@ server <- function(input, output) {
       if ('7' %in% RangeCheck){}else{content_select[5]=FALSE}
       if ('8' %in% RangeCheck){}else{content_select[6]=FALSE}
       if ('9' %in% RangeCheck){}else{content_select[7]=FALSE}
-      
+      if ('10' %in% RangeCheck){}else{content_select[8]=FALSE}
       
       if(is.null(v$data)){return()}
       else
@@ -1506,16 +1529,18 @@ server <- function(input, output) {
                                 b.freq[[2]], b.freq[[3]],
                                 b.emp[[1]], b.emp[[2]], 
                                 b.bayes[[2]], b.bayes[[3]],
-                                b.mix[1],b.mix[2]), nrow = 7,byrow = T)
-      result.toadd <- cbind(c(rep("Overall", 3),rep(l5, 4)),  
-                            c(rep(pooled.mean.random,2), pooled.mean.fixed, rep(pooled.mean.random,3), pooled.mean.fixed), 
-                            c(l3, "New Study (Random)", l4, "Frequentist", "Empirical", "Bayesian", "Mixture"), result.matrix)
-      result.toadd=result.toadd[content_select,]
+                                b.mix[1],b.mix[2],
+                                b.bayes[[8]], b.bayes[[9]]),nrow = 8,byrow = T)
+      result.toadd <- cbind(c(rep("Overall", 3),rep(l5, 5)),  
+                            c(rep(pooled.mean.random,2), pooled.mean.fixed, rep(pooled.mean.random,3), pooled.mean.fixed,pooled.mean.random), 
+                            c(l3, "New Study (Random)", l4, "Frequentist", "Empirical", "Bayesian predictive method", "Mixture","Bayesian quantile method"), result.matrix)
+      #result.toadd=result.toadd[content_select,]
       bb <- data.frame(result.toadd)
       colnames(bb) <- c("Interval Type", "Mean", "Method", "Lower", "Upper")
       bb$Mean <- sprintf('%4.2f', as.numeric(bb$Mean))
       bb$Lower <- sprintf('%4.2f', as.numeric(bb$Lower))
       bb$Upper <- sprintf('%4.2f', as.numeric(bb$Upper))
+      bb=bb[content_select,]
       bb
       })
     
@@ -1577,7 +1602,7 @@ server <- function(input, output) {
         if(input$model=="Fixed-effects"){
           RangeCheck=(input$RangeCheckf)
         }
-        content_select=rep(TRUE,7)
+        content_select=rep(TRUE,8)
         if ('3' %in% RangeCheck){}else{content_select[1]=FALSE}
         if ('4' %in% RangeCheck){}else{content_select[2]=FALSE}
         if ('5' %in% RangeCheck){}else{content_select[3]=FALSE}
@@ -1585,6 +1610,7 @@ server <- function(input, output) {
         if ('7' %in% RangeCheck){}else{content_select[5]=FALSE}
         if ('8' %in% RangeCheck){}else{content_select[6]=FALSE}
         if ('9' %in% RangeCheck){}else{content_select[7]=FALSE}
+        if ('10' %in% RangeCheck){}else{content_select[8]=FALSE}
         
         
         if(is.null(v$data)){return()}
@@ -1653,10 +1679,12 @@ server <- function(input, output) {
                                   b.freq[[2]], b.freq[[3]],
                                   b.emp[[1]], b.emp[[2]], 
                                   b.bayes[[2]], b.bayes[[3]],
-                                  b.mix[1],b.mix[2]), nrow = 7,byrow = T)
-        result.toadd <- cbind(c(rep("Overall", 3),rep(l5, 4)),  
-                              c(rep(pooled.mean.random,2), pooled.mean.fixed, rep(pooled.mean.random,3), pooled.mean.fixed), 
-                              c(l3, "New Study (Random)", l4, "Frequentist", "Empirical", "Bayesian", "Mixture"), result.matrix)
+                                  b.mix[1],b.mix[2],
+                                  b.bayes[[8]], b.bayes[[9]]),nrow = 8,byrow = T)
+        result.toadd <- cbind(c(rep("Overall", 3),rep(l5, 5)),  
+                              c(rep(pooled.mean.random,2), pooled.mean.fixed, rep(pooled.mean.random,3), pooled.mean.fixed,pooled.mean.random), 
+                              c(l3, "New Study (Random)", l4, "Frequentist", "Empirical", "Bayesian predictive method", "Mixture","Bayesian quantile method"), result.matrix)
+
         result.toadd=result.toadd[content_select,]
         bb <- data.frame(result.toadd)
         colnames(bb) <- c("Interval Type", "Mean", "Method", "Lower", "Upper")
